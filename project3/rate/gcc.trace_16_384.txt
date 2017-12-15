@@ -1,0 +1,5 @@
+Algorithm: Nru
+Number of frames:       16
+Total memory accesses:  1000000
+Total page faults:      214867
+Total writes to disk:   13231

@@ -1,0 +1,5 @@
+Algorithm: Clock
+Number of frames:       16
+Total memory accesses:  1000000
+Total page faults:      121682
+Total writes to disk:   16376

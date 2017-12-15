@@ -1,0 +1,5 @@
+Algorithm: Rand
+Number of frames:       32
+Total memory accesses:  1000000
+Total page faults:      106898
+Total writes to disk:   17369

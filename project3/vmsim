@@ -1,0 +1,237 @@
+#!/usr/bin/env python3
+"""
+vmsim.py
+
+CS 1550 Project 3: VM Simulator
+Zac Yu (zhy46@)
+"""
+
+from argparse import ArgumentParser, FileType
+from collections import namedtuple
+from enum import Enum
+from random import randrange
+from sys import stderr
+
+PAGE_SIZE_EXP = 12 # 4 KB == 2 ** 12 bits
+
+Operation = namedtuple('Operation', ['page', 'offset', 'mode'])
+
+def eprint(*args, **kwargs):
+    """"Print to stderr"""
+    print(*args, file=stderr, **kwargs)
+
+class EvictorInterface(object):
+    """Abstract class for a replace replacement algorithm"""
+
+    def find_evictee(self, frames):
+        """Find the (index of the) frame to be evicted"""
+        raise NotImplementedError()
+
+    def on_operation(self, frames, frame_id):
+        """Callback function after each page operation"""
+        raise NotImplementedError()
+
+class OptimalEvictor(EvictorInterface):
+    """Evictor implementing the optimal page replacement algorithm"""
+
+    next_used = []
+    frame_next_used = []
+    curr_time = 0
+
+    def __init__(self, operations):
+        self.next_used = [None] * len(operations)
+        used = {}
+        for i in reversed(range(len(operations))):
+            operation = operations[i]
+            self.next_used[i] = (float('inf') if operation.page not in used
+                                 else used[operation.page])
+            used[operation.page] = i
+
+    def find_evictee(self, frames):
+        max_next_used = max(self.frame_next_used)
+        if max_next_used != float('inf'):
+            return self.frame_next_used.index(max_next_used)
+        # There might be ties - prefer clean pages
+        candidates = [i for i in range(len(frames)) if
+                      self.frame_next_used[i] == float('inf')]
+        return min(candidates, key=lambda i: frames[i].d)
+
+    def on_operation(self, frames, frame_id):
+        if len(frames) > len(self.frame_next_used):
+            self.frame_next_used.append(self.next_used[self.curr_time])
+        else:
+            self.frame_next_used[frame_id] = self.next_used[self.curr_time]
+        self.curr_time += 1
+
+class SecondChanceEvictor(EvictorInterface):
+    """Evictor implementing the second-chance algorithm"""
+
+    clock_pointer = 0
+
+    def find_evictee(self, frames):
+        while True:
+            if frames[self.clock_pointer].r:
+                frames[self.clock_pointer].r = False
+                self.clock_pointer = (self.clock_pointer + 1) % len(frames)
+            else:
+                evictee_id = self.clock_pointer
+                self.clock_pointer = (self.clock_pointer + 1) % len(frames)
+                return evictee_id
+
+    def on_operation(self, frames, frame_id):
+        frames[frame_id].r = True
+
+class NotRecentlyUsedEvictor(EvictorInterface):
+    """Evictor implementing the NRU algorithm"""
+
+    refresh_counter = 0
+    refresh_rate = 0
+
+    def __init__(self, refresh_rate):
+        self.refresh_rate = refresh_rate
+
+    def find_evictee(self, frames):
+        # Find the minimum of referenced bit * 2 + dirty bit.
+        evictee = min(frames, key=lambda p: (p.r << 1) + p.d)
+        return frames.index(evictee)
+
+    def on_operation(self, frames, frame_id):
+        self.refresh_counter += 1
+        if self.refresh_counter == self.refresh_rate:
+            for frame in frames:
+                frame.r = False
+            self.refresh_counter = 0
+        frames[frame_id].r = True
+
+class RandomEvictor(EvictorInterface):
+    """Evictor that chooses randomly"""
+
+    def find_evictee(self, frames):
+        return randrange(len(frames))
+
+    def on_operation(self, frames, frame_id):
+        pass
+
+class OperationMode(Enum):
+    """Mode of page operation"""
+    READ = 0
+    WRITE = 1
+
+class Page(object):
+    """Abstraction of (inverted) page table entry"""
+    def __init__(self, page_id, dirty=False, referenced=True):
+        self.pid = page_id
+        self.d = dirty
+        self.r = referenced
+
+class PageTable(object):
+    """Simulated page table"""
+
+    memory_access_count = 0
+    page_fault_count = 0
+    write_count = 0
+    frames = []
+    frame_id_cache = {}
+    max_frame_num = 0
+    evictor = None
+
+    def __init__(self, frame_num, evictor):
+        self.max_frame_num = frame_num
+        self.evictor = evictor
+
+    def __lookup(self, page_id):
+        """"Simulate a frame ID lookup"""
+        # If page is loaded, return directly
+        if (page_id in self.frame_id_cache and
+                self.frames[self.frame_id_cache[page_id]].pid == page_id):
+            eprint('Hit')
+            return self.frame_id_cache[page_id]
+
+        self.page_fault_count += 1
+        eprint('Page Fault - ', end='')
+        # If there are empty frames
+        if len(self.frames) < self.max_frame_num:
+            self.frames.append(Page(page_id))
+            frame_id = len(self.frames) - 1
+            self.frame_id_cache[page_id] = frame_id
+            eprint('No Eviction')
+            return frame_id
+
+        # Evict and replace frame
+        evictee_id = self.evictor.find_evictee(self.frames)
+        if self.frames[evictee_id].d: # Write to disk if dirty
+            self.write_count += 1
+            eprint('Evict Dirty')
+        else:
+            eprint('Evict Clean')
+        self.frames[evictee_id] = Page(page_id)
+        self.frame_id_cache[page_id] = evictee_id
+        return evictee_id
+
+    def read(self, page_id):
+        """Simulate a read operation"""
+        self.memory_access_count += 1
+        frame_id = self.__lookup(page_id)
+        self.evictor.on_operation(self.frames, frame_id)
+
+    def write(self, page_id):
+        """Simulate a read operation"""
+        self.memory_access_count += 1
+        frame_id = self.__lookup(page_id)
+        self.frames[frame_id].d = True # Mark page as dirty
+        self.evictor.on_operation(self.frames, frame_id)
+
+def main():
+    """Main function"""
+    parser = ArgumentParser(description='Page replacement simulation.')
+    parser.add_argument('-n', required=True, type=int, help='number of frames')
+    parser.add_argument('-a', type=str, required=True,
+                        choices=['opt', 'clock', 'nru', 'rand'],
+                        help='page replacement algorithm')
+    parser.add_argument('-r', type=int, help='refresh period')
+    parser.add_argument('file', type=FileType('r'), help='trace file')
+
+    args = parser.parse_args()
+    if args.a == 'nru' and not args.r:
+        raise SystemExit('error: refresh rate is required when using NRU.')
+
+    operations = [] # All operations from the trace file
+    for line in args.file:
+        parts = line.split()
+        page_id = int(parts[0], 16) >> PAGE_SIZE_EXP
+        offset = int(parts[0], 16) & ((2 << PAGE_SIZE_EXP) - 1)
+        op_mode = OperationMode.READ if parts[1] == 'R' else OperationMode.WRITE
+        operations.append(Operation(page_id, offset, op_mode))
+
+    # Instantiate the evictor that corresponds to the specified algorithm
+    if args.a == 'opt':
+        evictor = OptimalEvictor(operations)
+    elif args.a == 'clock':
+        evictor = SecondChanceEvictor()
+    elif args.a == 'nru':
+        evictor = NotRecentlyUsedEvictor(args.r)
+    elif args.a == 'rand':
+        evictor = RandomEvictor()
+    else:
+        raise NotImplementedError()
+
+    # Instantiate the evictor
+    page_table = PageTable(args.n, evictor)
+
+    # Begin simulation
+    for operation in operations:
+        eprint('%#010x: ' % ((operation.page << PAGE_SIZE_EXP) +
+                             operation.offset), end='')
+        if operation.mode == OperationMode.READ:
+            page_table.read(operation.page)
+        else:
+            page_table.write(operation.page)
+    eprint('-' * 80)
+    print('Algorithm: %s' % args.a.title())
+    print('Number of frames:       %d' % args.n)
+    print('Total memory accesses:  %d' % page_table.memory_access_count)
+    print('Total page faults:      %d' % page_table.page_fault_count)
+    print('Total writes to disk:   %d' % page_table.write_count)
+
+if __name__ == '__main__':
+    main()
