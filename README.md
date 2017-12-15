@@ -5,13 +5,13 @@ Programming projects for CS 1550 (Introduction to Operating Systems), lectured b
 This directory contains the programming projects I completed for CS 1550 course in Fall 2017 at the University of Pittsburgh. There are four projects in total.
 
 ## Projects
-### [Project 1: Double-Buffered Graphics Library]('project1')
+### [Project 1: Double-Buffered Graphics Library](project1)
 ![Demo 1](project1/demo.gif)
-### [Project 2: Syscalls and IPC]('project2')
+### [Project 2: Syscalls and IPC](project2)
 ![Demo 2](project2/demo.gif)
-### [Project 3: VM Simulator]('project3')
+### [Project 3: VM Simulator](project3)
 ![Demo 3](project3/demo.gif)
-### [Project 4: File Systems]('project4')
+### [Project 4: File Systems](project4)
 ![Demo 4](project4/demo.gif)
 
 ## Disclaimer
