@@ -772,7 +772,8 @@ static int cs1550_write(const char *path, const char *buf, size_t size,
               size_t remaining = size;
               long* new_block_idxs = NULL;
               int used_new_blocks = 0;
-              if (remaining - writable_file_size > MAX_DATA_IN_BLOCK - offset) {
+              if (remaining > writable_file_size &&
+                  remaining - writable_file_size > MAX_DATA_IN_BLOCK - offset) {
                 int require_block_num = (remaining - writable_file_size +
                                          offset - 1) / MAX_DATA_IN_BLOCK;
                 new_block_idxs = request_free_blocks(disk, require_block_num);
