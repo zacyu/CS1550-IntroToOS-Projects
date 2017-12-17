@@ -21,7 +21,7 @@ def eprint(*args, **kwargs):
     print(*args, file=stderr, **kwargs)
 
 class EvictorInterface(object):
-    """Abstract class for a replace replacement algorithm"""
+    """Abstract class for a page replacement algorithm"""
 
     def find_evictee(self, frames):
         """Find the (index of the) frame to be evicted"""
@@ -215,7 +215,7 @@ def main():
     else:
         raise NotImplementedError()
 
-    # Instantiate the evictor
+    # Instantiate the page table
     page_table = PageTable(args.n, evictor)
 
     # Begin simulation
